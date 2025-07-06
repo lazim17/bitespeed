@@ -1,13 +1,15 @@
 {
-  "name": "lazim",
+  "name": "bitespeed",
   "version": "1.0.0",
-  "description": "",
+  "description": "Bitespeed Identity Reconciliation Service",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "node src/index.js",
+    "start": "node src/index.js",
+    "prisma": "prisma"
   },
   "keywords": [],
-  "author": "",
+  "author": "lazim",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
