@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node src/index.js",
     "start": "node src/index.js",
-    "build": "prisma generate"
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "lazim",
