@@ -25,29 +25,32 @@ async function identifyContact({ email, phoneNumber }) {
     return formatResponse(newContact, [], []);
   }
 
-    let primaryContact = existingContacts.find(c => c.linkPrecedence === "primary") || existingContacts[0];
 
-    if (primaryContact.linkPrecedence === "secondary" && primaryContact.linkedId) {
 
-    const rootPrimary = await prisma.contact.findUnique({
-        where: { id: primaryContact.linkedId },
-    });
+  const primaryContacts = existingContacts.filter(c => c.linkPrecedence === "primary");
 
-    if (rootPrimary) {
-        primaryContact = rootPrimary;
+    const truePrimary = primaryContacts[0] || existingContacts[0];
+
+    for (const contact of primaryContacts) {
+    if (contact.id !== truePrimary.id) {
+        await prisma.contact.update({
+        where: { id: contact.id },
+        data: {
+            linkedId: truePrimary.id,
+            linkPrecedence: "secondary",
+        },
+        });
     }
     }
-
-    const allLinkedContacts = await prisma.contact.findMany({
+  const allLinkedContacts = await prisma.contact.findMany({
     where: {
       OR: [
-        { id: primaryContact.id },
-        { linkedId: primaryContact.id },
+        { id: truePrimary.id },
+        { linkedId: truePrimary.id },
       ],
     },
     orderBy: { createdAt: "asc" },
   });
-
 
   const alreadyExists = allLinkedContacts.some(c =>
     c.email === email && c.phoneNumber === phoneNumber
@@ -55,19 +58,18 @@ async function identifyContact({ email, phoneNumber }) {
 
   let newContact = null;
   if (!alreadyExists) {
-
     newContact = await prisma.contact.create({
       data: {
         email,
         phoneNumber,
-        linkedId: primaryContact.id,
+        linkedId: truePrimary.id,
         linkPrecedence: "secondary",
       },
     });
     allLinkedContacts.push(newContact);
   }
 
-  return formatResponse(primaryContact, allLinkedContacts, newContact ? [newContact.id] : []);
+  return formatResponse(truePrimary, allLinkedContacts, newContact ? [newContact.id] : []);
 }
 
 
