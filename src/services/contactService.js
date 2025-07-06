@@ -1,8 +1,7 @@
 const prisma = require("../prisma/client");
 
 async function identifyContact({ email, phoneNumber }) {
-
-    const existingContacts = await prisma.contact.findMany({
+  let matchedContacts = await prisma.contact.findMany({
     where: {
       OR: [
         email ? { email } : undefined,
@@ -12,8 +11,7 @@ async function identifyContact({ email, phoneNumber }) {
     orderBy: { createdAt: "asc" },
   });
 
-
-  if (existingContacts.length === 0) {
+  if (matchedContacts.length === 0) {
     const newContact = await prisma.contact.create({
       data: {
         email,
@@ -21,28 +19,66 @@ async function identifyContact({ email, phoneNumber }) {
         linkPrecedence: "primary",
       },
     });
-
     return formatResponse(newContact, [], []);
   }
 
+  const alreadyExists = matchedContacts.some(
+    c => c.email === email && c.phoneNumber === phoneNumber
+  );
 
+  let newContact = null;
+  if (!alreadyExists) {
+    const oldest = matchedContacts[0];
+    newContact = await prisma.contact.create({
+      data: {
+        email,
+        phoneNumber,
+        linkedId: oldest.id,
+        linkPrecedence: "secondary",
+      },
+    });
 
-  const primaryContacts = existingContacts.filter(c => c.linkPrecedence === "primary");
+    matchedContacts.push(newContact);
+  }
 
-    const truePrimary = primaryContacts[0] || existingContacts[0];
+  const allContacts = await prisma.contact.findMany({
+    where: {
+      OR: [
+        ...[email, phoneNumber]
+          .filter(Boolean)
+          .flatMap(value => [
+            { email: value },
+            { phoneNumber: value }
+          ])
+      ]
+    },
+    orderBy: { createdAt: "asc" },
+  });
 
-    for (const contact of primaryContacts) {
+  const allPrimaries = allContacts.filter(c => c.linkPrecedence === "primary");
+  let truePrimary = allPrimaries[0] || allContacts[0];
+
+  while (truePrimary.linkedId) {
+    const parent = await prisma.contact.findUnique({
+      where: { id: truePrimary.linkedId },
+    });
+    if (!parent) break;
+    truePrimary = parent;
+  }
+
+  for (const contact of allPrimaries) {
     if (contact.id !== truePrimary.id) {
-        await prisma.contact.update({
+      await prisma.contact.update({
         where: { id: contact.id },
         data: {
-            linkedId: truePrimary.id,
-            linkPrecedence: "secondary",
+          linkedId: truePrimary.id,
+          linkPrecedence: "secondary",
         },
-        });
+      });
     }
-    }
-  const allLinkedContacts = await prisma.contact.findMany({
+  }
+
+  const linkedContacts = await prisma.contact.findMany({
     where: {
       OR: [
         { id: truePrimary.id },
@@ -52,26 +88,8 @@ async function identifyContact({ email, phoneNumber }) {
     orderBy: { createdAt: "asc" },
   });
 
-  const alreadyExists = allLinkedContacts.some(c =>
-    c.email === email && c.phoneNumber === phoneNumber
-  );
-
-  let newContact = null;
-  if (!alreadyExists) {
-    newContact = await prisma.contact.create({
-      data: {
-        email,
-        phoneNumber,
-        linkedId: truePrimary.id,
-        linkPrecedence: "secondary",
-      },
-    });
-    allLinkedContacts.push(newContact);
-  }
-
-  return formatResponse(truePrimary, allLinkedContacts, newContact ? [newContact.id] : []);
+  return formatResponse(truePrimary, linkedContacts, newContact ? [newContact.id] : []);
 }
-
 
 function formatResponse(primary, allContacts, newSecondaryIds) {
   const emails = new Set();
@@ -90,10 +108,12 @@ function formatResponse(primary, allContacts, newSecondaryIds) {
   }
 
   return {
-    primaryContatctId: primary.id,
-    emails: [primary.email, ...[...emails].filter(e => e && e !== primary.email)],
-    phoneNumbers: [primary.phoneNumber, ...[...phoneNumbers].filter(p => p && p !== primary.phoneNumber)],
-    secondaryContactIds,
+    contact: {
+      primaryContatctId: primary.id,
+      emails: [primary.email, ...[...emails].filter(e => e && e !== primary.email)],
+      phoneNumbers: [primary.phoneNumber, ...[...phoneNumbers].filter(p => p && p !== primary.phoneNumber)],
+      secondaryContactIds,
+    },
   };
 }
 
