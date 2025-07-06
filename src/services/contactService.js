@@ -1,8 +1,8 @@
 const prisma = require("../prisma/client");
 
 async function identifyContact({ email, phoneNumber }) {
-  // 1. Find all contacts that match either email or phoneNumber
-  const existingContacts = await prisma.contact.findMany({
+
+    const existingContacts = await prisma.contact.findMany({
     where: {
       OR: [
         email ? { email } : undefined,
@@ -12,7 +12,7 @@ async function identifyContact({ email, phoneNumber }) {
     orderBy: { createdAt: "asc" },
   });
 
-  // 2. If none found, create a new primary contact and return response
+
   if (existingContacts.length === 0) {
     const newContact = await prisma.contact.create({
       data: {
@@ -25,11 +25,20 @@ async function identifyContact({ email, phoneNumber }) {
     return formatResponse(newContact, [], []);
   }
 
-  // 3. Find primary contact
-  const primaryContact = existingContacts.find(c => c.linkPrecedence === "primary") || existingContacts[0];
+    let primaryContact = existingContacts.find(c => c.linkPrecedence === "primary") || existingContacts[0];
 
-  // 4. Get all linked contacts
-  const allLinkedContacts = await prisma.contact.findMany({
+    if (primaryContact.linkPrecedence === "secondary" && primaryContact.linkedId) {
+
+    const rootPrimary = await prisma.contact.findUnique({
+        where: { id: primaryContact.linkedId },
+    });
+
+    if (rootPrimary) {
+        primaryContact = rootPrimary;
+    }
+    }
+
+    const allLinkedContacts = await prisma.contact.findMany({
     where: {
       OR: [
         { id: primaryContact.id },
@@ -39,14 +48,14 @@ async function identifyContact({ email, phoneNumber }) {
     orderBy: { createdAt: "asc" },
   });
 
-  // 5. Check if incoming data differs from all existing contacts
+
   const alreadyExists = allLinkedContacts.some(c =>
     c.email === email && c.phoneNumber === phoneNumber
   );
 
   let newContact = null;
   if (!alreadyExists) {
-    // Create secondary contact with new info
+
     newContact = await prisma.contact.create({
       data: {
         email,
@@ -61,7 +70,7 @@ async function identifyContact({ email, phoneNumber }) {
   return formatResponse(primaryContact, allLinkedContacts, newContact ? [newContact.id] : []);
 }
 
-// Formats the contact response as required
+
 function formatResponse(primary, allContacts, newSecondaryIds) {
   const emails = new Set();
   const phoneNumbers = new Set();
